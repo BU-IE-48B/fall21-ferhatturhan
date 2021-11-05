@@ -1,0 +1,223 @@
+---
+title: "Gesture Recognition and Time Series Representation"
+author: "Ferhat Turhan"
+date: "11/5/2021"
+output: html_document
+---
+
+In this homework, a multivariate time series data is tried to be visualized and understood. The data is a motion data expressed in three dimension: X,Y,Z. This data is actually for efficient personalized gesture recognition on wide range of devices. In this homework, the aim is only to make some manipulations on data and try to anticipate which class belongs to which gesture and after that finding representations to this time series.
+
+In the first part manipulations are made and then some random motions are visualized so that some guesses about their classification on gestures could be made. 
+
+In the second part two alternative time series representations are proposed for this multivariate time series.
+
+# Part 1
+
+## Data Manipulation
+
+First I read the data. Then to be able to make the this data more readable and for easier visualization, I did some manipulations such changing the first variables name as "class" and addind an "id" column. Since I will work on long format, I melted the data. After these, I used cumulative sum operation to find velocity and location information of the motion. These manipulations are applied to all of the three dimensions X,Y,Z.
+
+```{r needed packages, include=FALSE}
+library(data.table)
+library(ggplot2)
+library(plotly)
+library(TSrepr)
+```
+
+```{r read and manipulate, echo=FALSE}
+train_x <- data.table(read.table("~/Downloads/uWaveGestureLibrary_X_TRAIN", quote="\"", comment.char=""))
+train_y <- data.table(read.table("~/Downloads/uWaveGestureLibrary_Y_TRAIN", quote="\"", comment.char=""))
+train_z <- data.table(read.table("~/Downloads/uWaveGestureLibrary_Z_TRAIN", quote="\"", comment.char=""))
+
+setnames(train_x,'V1','class')
+train_x <- train_x[order(class)]
+train_x[,class:=as.character(class)]
+train_x[,id:=1:.N]
+
+long_x=melt(train_x,id.vars=c('id','class'))
+long_x[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_x=long_x[,list(id,class,time,value)]
+long_x=long_x[order(id,time)]
+
+setnames(long_x,'value','acceleration_x')
+long_x[, velocity_x:=cumsum(acceleration_x), by=id]
+long_x[, location_x:=cumsum(velocity_x), by=id]
+
+setnames(train_y,'V1','class')
+train_y <- train_y[order(class)]
+train_y[,class:=as.character(class)]
+train_y[,id:=1:.N]
+
+long_y=melt(train_y,id.vars=c('id','class'))
+long_y[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_y=long_y[,list(id,class,time,value)]
+long_y=long_y[order(id,time)]
+
+setnames(long_y,'value','acceleration_y')
+long_y[, velocity_y:=cumsum(acceleration_y), by=id]
+long_y[, location_y:=cumsum(velocity_y), by=id]
+
+setnames(train_z,'V1','class')
+train_z <- train_z[order(class)]
+train_z[,class:=as.character(class)]
+train_z[,id:=1:.N]
+
+long_z=melt(train_z,id.vars=c('id','class'))
+long_z[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_z=long_z[,list(id,class,time,value)]
+long_z=long_z[order(id,time)]
+
+setnames(long_z,'value','acceleration_z')
+long_z[, velocity_z:=cumsum(acceleration_z), by=id]
+long_z[, location_z:=cumsum(velocity_z), by=id]
+
+head(long_x)
+head(long_y)
+head(long_z)
+
+```
+
+Now that we are done with manipulations, my data is ready to be visualized.
+
+To be able to see a motion's shape, I need to visualize the motion in three dimensions in one diagram. Therefore I merged the location information of the three dimensions into one data table and then plot a couple of motions to see if they match to the motions described in the homework.
+
+```{r merge, echo=FALSE}
+
+merged <- cbind(long_x, long_y$location_y, long_z$location_z)
+merged[, c("acceleration_x","velocity_x"):=NULL]
+colnames(merged) <- c("id", "class", "time", "location_x", "location_y", "location_z")
+head(merged)
+```
+
+## Visualization
+
+Let's see for one random motion from each class and make guesses about them on which gesture they might fit in. (You can change the view of the plots by using left click and the mouse.)
+
+```{r class 1, echo=FALSE}
+plot_ly(x=merged[id == 56]$location_x, y=merged[id == 56]$location_y, z=merged[id == 56]$location_z, type = "scatter3d", mode="markers", color = I("blue")) %>% layout(title="Class 1 ID: 56")
+```
+
+This motion (ID 56) from "class 1" looks like a half circle. Along the gestures from homework, it can be said that this class might be gesture 7 or 8.
+
+```{r class 2, echo=FALSE}
+plot_ly(x=merged[id == 124]$location_x, y=merged[id == 124]$location_y, z=merged[id == 124]$location_z, type = "scatter3d", mode="markers", color = I("orange")) %>% layout(title="Class 2 ID: 124")
+```
+
+This motion (ID 124) from "class 2" looks like a wrongly finished square. Along the gestures from homework, it can be said that this class might be gesture 2, which is a square.
+
+```{r class 3, echo=FALSE}
+plot_ly(x=merged[id == 310]$location_x, y=merged[id == 310]$location_y, z=merged[id == 310]$location_z, type = "scatter3d", mode="markers", color = I("brown")) %>% layout(title="Class 3 ID: 310")
+```
+
+This motion (ID 310) from "class 3" looks like the letter "C", which again made me think of the gesture 7 or 8 (which are full circles).
+
+```{r class 4, echo=FALSE}
+plot_ly(x=merged[id == 455]$location_x, y=merged[id == 455]$location_y, z=merged[id == 455]$location_z, type = "scatter3d", mode="markers", color = I("red")) %>% layout(title="Class 4 ID: 455")
+```
+
+This motion (ID 455) from "class 4" looks like an unfinished shape of gesture 1.
+
+```{r class 5, echo=FALSE}
+plot_ly(x=merged[id == 551]$location_x, y=merged[id == 551]$location_y, z=merged[id == 551]$location_z, type = "scatter3d", mode="markers", color = I("green")) %>% layout(title="Class 5 ID: 551")
+```
+
+This motion (ID 551) from "class 5" looks like straight line, which made me think of the gesture 3,4,5 or 6.
+
+```{r class 6, echo=FALSE}
+plot_ly(x=merged[id == 643]$location_x, y=merged[id == 463]$location_y, z=merged[id == 643]$location_z, type = "scatter3d", mode="markers", color = I("gray")) %>% layout(title="Class 6 ID: 643")
+```
+
+This motion (ID 643) from "class 6" looks like the letter "C", which again made me think of the gesture 7 or 8 (which are full circles).
+
+```{r class 7, echo=FALSE}
+plot_ly(x=merged[id == 792]$location_x, y=merged[id == 792]$location_y, z=merged[id == 792]$location_z, type = "scatter3d", mode="markers", color = I("purple")) %>% layout(title="Class 7 ID: 792")
+```
+
+This motion (ID 792) from "class 7" is almost a full circle, which is probably gesture 7 or 8.
+
+```{r class 8, echo=FALSE}
+plot_ly(x=merged[id == 844]$location_x, y=merged[id == 844]$location_y, z=merged[id == 844]$location_z, type = "scatter3d", mode="markers", color = I("yellow")) %>% layout(title="Class 8 ID: 844")
+```
+
+This motion (ID 844) from "class 8" made me think of changes in directions. But it also looks like a circle at the same time. I would say gesture 1,7,8 might be the classification.
+
+# Part 2
+
+## Representing as the Distance from Origin (0,0,0)
+
+To be able to represent the data, I calculated the distances of all points to the origin point (0,0,0). Then I divided every motion into 2 part and calculated mean of these 2 intervals' distance. After looking at the motions' first and second intervals' mean distances we can say that this is not a good representation for this data since there is no clear distinction between classes. But still when we look at the second intervals we might say that this is slightly better than the first interval in visual distinction.
+
+```{r represent1, echo=FALSE}
+
+merged[, distance:=as.numeric(sqrt(location_x^2 + location_y^2 + location_z^2))]
+merged[,interval_id:=cut(time,2, ordered_result=T),by=list(id)]
+merged[,interval_id:=as.numeric(interval_id)]
+
+stats=merged[,list(mean=mean(distance)),by=list(class,id,interval_id)]
+
+interval_stats=dcast(stats,id+class~paste0('int_',interval_id),value.var='mean')
+
+ggplot(data=interval_stats, aes(x=id, y=int_1,fill=class)) +
+  geom_bar(stat="identity") +
+  ggtitle("Mean distances of the motions' first interval")
+
+ggplot(data=interval_stats, aes(x=id, y=int_2,fill=class)) +
+  geom_bar(stat="identity") +
+  ggtitle("Mean distances of the motions' second interval")
+```
+
+## Piecewise Aggregate Approximation
+
+As the second approach, I used piecewise aggregate approximation. First for all classes I calculated the mean location values and then applied piecewise aggregate approximation to all dimensions.
+
+```{r represent2, echo=FALSE}
+# Piecewise Aggregate Approximation
+selected_series=1
+segment_length=5
+
+# sort long table just in case
+long_x=long_x[,mean:=mean(location_x),by=list(class)]
+long_x=long_x[order(id,time)]
+
+data_tsx=long_x$mean
+paa_repx=repr_paa(data_tsx, segment_length, meanC)
+plot(paa_repx,type='l', main = "Piecewise Aggregate Approximation for Dimension X")
+
+long_y=long_y[,mean:=mean(location_y),by=list(class)]
+long_y=long_y[order(id,time)]
+
+data_tsy=long_y$mean
+paa_repy=repr_paa(data_tsy, segment_length, meanC)
+plot(paa_repy,type='l', main = "Piecewise Aggregate Approximation for Dimension Y")
+
+long_z=long_z[,mean:=mean(location_z),by=list(class)]
+long_z=long_z[order(id,time)]
+
+data_tsz=long_z$mean
+paa_repz=repr_paa(data_tsz, segment_length, meanC)
+plot(paa_repz,type='l', main = "Piecewise Aggregate Approximation for Dimension Z")
+
+```
+
+By looking at all three dimensions, it can be seen that this second approach is much more better than the first approach when we try to distinguish class labels. Piecewise Aggregate Approximation definitely works well.
+
+# Conclusion
+
+In this homework a multivariate time series data is examined and visualized. In the first part it can be seen that this time series actually represents the gestures and that is a huge step. We can see that images are hidden in these time series and they can be found and classified by data manipulation and some more advanced methods.
+
+As in the second part some representations are tried to be made to be able to summarize data with few numbers. As mentioned above, "Piecewise Aggregate Approximation" is better than  "Representing as the Distance from Origin (0,0,0)" From the graphs and plots, it is clear that we can distinguish the classes better in the second proposed method.
+
+# References
+
+Relevant data can be found [here](https://drive.google.com/drive/u/0/folders/13553neknux7U8why55KM1WrjgkA9IJKm)
+
+You can find the related R Markdown file and related R Codes [here](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/hw1.Rmd)
+
+
+
+
+
+
+
+
+
