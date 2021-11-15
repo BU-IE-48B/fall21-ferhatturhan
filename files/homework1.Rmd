@@ -211,7 +211,7 @@ As in the second part some representations are tried to be made to be able to su
 
 Relevant data can be found [here](https://drive.google.com/drive/u/0/folders/13553neknux7U8why55KM1WrjgkA9IJKm)
 
-You can find the related R Markdown file and related R Codes [here](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/hw1.Rmd)
+You can find the related R Markdown file and related R Codes [here](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/homework1.Rmd)
 
 
 
