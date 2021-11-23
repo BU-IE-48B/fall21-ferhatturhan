@@ -1,0 +1,254 @@
+---
+title: "Penalized Regression Approaches for Time Series Representation"
+author: "Ferhat Turhan"
+date: "11/21/2021"
+output: html_document
+---
+
+In this homework students are required to deal with penalized versions of the linear regression approaches. These approaches will be applied to a data set with 30 time series. The main goal is to represent the time series with alternative approaches and these 2 penalized versions of the linear regression approaches that "1D Fused Lasso" and "Regression Trees" are alternative ways to obtain adaptive piecewise constant approximation.
+
+After having the representations, their ability of representation and classification performance will be evaluated at the end. To do these tasks, some manipulations of data such as melting, and changing column names are needed.
+
+## Data Manipulation
+
+Reading data, melting and manipulating it to be used in this tasks are done in the first place. Doing the necessary manipulations, head of the data looks like as follows.
+
+```{r read and manipulate, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+library(data.table)
+library(genlasso)
+library(rpart)
+library(rattle)
+library(ggplot2)
+library(mltools)
+
+set.seed(100)
+cbf_train <- data.table(read.table("~/Documents/GitHub/fall21-ferhatturhan/files/CBF_TRAIN.txt", quote="\"", comment.char=""))
+
+setnames(cbf_train,'V1','class')
+cbf_train <- cbf_train[order(class)]
+cbf_train[,class:=as.character(class)]
+cbf_train[,id:=1:.N]
+
+long_cbf=melt(cbf_train,id.vars=c('id','class'))
+long_cbf[,time:=as.numeric(gsub("\\D", "", variable))-1]
+long_cbf=long_cbf[,list(id,class,time,value)]
+long_cbf=long_cbf[order(id,time)]
+
+head(long_cbf)
+```
+
+## Task 1: 1D Fused Lasso
+
+To represent the data with 1D Fused Lasso, an appropriate lambda value is needed to be selected. As proposed in the homework definition, we can try cross validation with k = 10 on each time series to find a good lambda value for each. Below you can see the two representation with two different lambda values for the very first time series of our data. These different lambda values are the one with minimum error and the one with 1 standard error rates. 
+
+```{r 1D Fused Lasso lambda trial, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+out_trial <- trendfilter(as.numeric(cbf_train[1,2:129]), ord = 0) 
+cv_trial <- cv.trendfilter(out_trial) # k=10 by default
+plot(out_trial, lambda=cv_trial$lambda.min, main="Minimal CV error")
+plot(out_trial, lambda=cv_trial$lambda.1se, main="One standard error rule")
+```
+
+Even though the plots suggest that lambda value with minimum error rates fits better, in the document of [Introduction to genlasso package](https://cran.r-project.org/web/packages/genlasso/vignettes/article.pdf) (which is used to implement 1d fused lasso representation) lambda value with 1 standard error is proposed in order to prevent overfitting with the lambda that has minimum error. Hence lambda values with 1 standard error are used and fitted values are added to our melted data below. Head of the data  and some of the time series visualization with the 1D Fused Lasso Representation from different class labels are as follows now.
+
+```{r 1D Fused Lasso, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+for (i in 1:30)
+{
+  out <- trendfilter(as.numeric(cbf_train[i,2:129]), ord = 0)
+  cv <- cv.trendfilter(out, k = 10)
+  long_cbf[(128*(i-1)+1):(128*i),"1D Fused Lasso" := out$fit[,match(cv$lambda.1se, out$lambda)]]
+}
+```
+
+```{r head of data, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+head(long_cbf)
+
+par(mfrow = c(1,3))
+ggplot(long_cbf[id == 14], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[1665:1792], y = long_cbf$`1D Fused Lasso`[1665:1792], color = "Representation with 1D Fused Lasso")) +
+  labs(title = "Example ID: 14")
+
+ggplot(long_cbf[id == 26], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[3201:3328], y = long_cbf$`1D Fused Lasso`[3201:3328], color = "Representation with 1D Fused Lasso")) +
+  labs(title = "Example ID: 26")
+
+ggplot(long_cbf[id == 7], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[769:896], y = long_cbf$`1D Fused Lasso`[769:896], color = "Representation with 1D Fused Lasso")) +
+  labs(title = "Example ID: 7")
+```
+
+## Task 2: Regression Trees
+
+In this second task another penalized regression approach is used. As stated in the homework file, I fixed the complexity parameter to zero, minsplit to 20 and minbucket to 10. The only need is to search for best value of the maximum depth parameter. Since the range of this parameter in R studio is [1,30], I searched all of this values and pick the best one according to "xerror" values of cptable. First lets do this to the very first time series.
+
+```{r regression trees trial, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+errors_trial <- vector()
+for(i in 1:30)
+{
+  base_tree_trial <- rpart(value~time, long_cbf[id == 1], control = 
+                        rpart.control(minsplit = 20, minbucket = 10, cp = 0, maxdepth = i))
+  errors_trial[i] <- base_tree_trial$cptable[which.min(base_tree_trial$cptable[, "CP"]), "xerror"]
+  
+}
+  best_error_tree_trial <- rpart(value~time, long_cbf[id == 1], control = 
+                     rpart.control(minsplit = 20, minbucket = 10, cp = 0, maxdepth = which.min(errors_trial)))
+  print("Best maxdepth parameter for the first time series is:")
+  print(which.min(errors_trial))
+  fancyRpartPlot(best_error_tree_trial,sub = "")
+  long_cbf[(1:128), "Regression Trees" := predict(best_error_tree_trial, long_cbf[id == 1])]
+  
+  ggplot(long_cbf[id == 1], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[1:128], y = long_cbf$`Regression Trees`[1:128], color = "Representation with Regression Tree"))
+```
+
+This approach, using the minimum errors to find best maxdepth value is one of the approaches that can be used. Now that we see that it works for the first time series, I will apply to all of the 30 time series. Head of the data and some of the time series from different class labels are shown below. 
+
+```{r regression trees, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+errors <- vector()
+
+for(j in 1:30)
+{
+  for(i in 1:30)
+  {
+    base_tree <- rpart(value~time, long_cbf[id == j], control = 
+                        rpart.control(minsplit = 20, minbucket = 10, cp = 0, maxdepth = i))
+    errors[i] <- base_tree$cptable[which.min(base_tree$cptable[, "CP"]), "xerror"]
+  }
+  best_error_tree <- rpart(value~time, long_cbf[id == j], control = 
+                     rpart.control(minsplit = 20, minbucket = 10, cp = 0, maxdepth = which.min(errors)))
+  long_cbf[(128*(j-1)+1):(128*j), "Regression Trees" := predict(best_error_tree, long_cbf[id == j])]
+}
+
+head(long_cbf)
+par(mfrow = c(1,3))
+ggplot(long_cbf[id == 14], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[1665:1792], y = long_cbf$`Regression Trees`[1665:1792], color = "Representation with Regression Tree")) +
+  labs(title = "Example ID: 14")
+
+ggplot(long_cbf[id == 26], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[3201:3328], y = long_cbf$`Regression Trees`[3201:3328], color = "Representation with Regression Tree")) +
+  labs(title = "Example ID: 26")
+
+ggplot(long_cbf[id == 7], aes( x = time, y = value, color = "Original Values")) + 
+  geom_point() + 
+  geom_line(aes( x = long_cbf$time[769:896], y = long_cbf$`Regression Trees`[769:896], color = "Representation with Regression Tree")) +
+  labs(title = "Example ID: 7")
+
+```
+
+Now that we represented the data with the two alternative penalized regression approaches, it's time to compare them.
+
+## Task 3: Comparison by MSE
+
+Finding the representations with the best parameters are done in the previous parts. Here mean squared error of the represantations will be found and compared. A data table is created for the mean squared error values of the time series data. Head of the data can be seen below.
+
+```{r mse tables, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+mse_table <- as.data.table(c(1:30))
+setnames(mse_table,'V1','id')
+
+for(i in 1:30)
+{
+  mse_table[i, '1D Fused Lasso' := mse(long_cbf[id == i]$value, long_cbf[id == i]$`1D Fused Lasso`)]
+  mse_table[i, 'Regression Trees' := mse(long_cbf[id == i]$value, long_cbf[id == i]$'Regression Trees')]
+}
+
+head(mse_table)
+```
+
+Roughly by looking at the MSE values, we can say that Regression Trees approach seems to have a more accurate representations because MSE values of this representation approach are lower. Let's look at the box plots and see if our first insights are correct.
+
+```{r box plots, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+par(mfrow = c(1,2))
+boxplot(mse_table$`1D Fused Lasso`, main = "1D Fused Lasso", ylim = c(0, 0.3))
+boxplot(mse_table$`Regression Trees`, main = "Regression Tree", ylim = c(0, 0.3))
+```
+
+Also the box plots encourage what I thought before. It looks like Regression Tree model has lower MSE values and therefore moderately a better model.
+
+## Task 4: 1-NN Classification Accuracy
+
+1-NN Classification is a classification method that is used to predict certain classes of of some data. It is based on the distances of the attributes. In this final port of the homework, a comparison of the two alternative representation approaches above is to be performed on the accuracy of 1-NN classifier. Euclidean distance is used to calculate the distance between the time series. After calculating distances and classifying according to that distance following classification table shows up.
+
+```{r part 4, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+raw <- matrix(NA, nrow = 30, ncol = 30)
+part1 <- matrix(NA, nrow = 30, ncol = 30)
+part2 <- matrix(NA, nrow = 30, ncol = 30)
+
+class_table <- cbf_train[,1]
+class_table[,raw:= NA]
+class_table[,'1D Fused Lasso' := NA]
+class_table[,'Regression Trees' := NA]
+
+raw_v <- vector()
+part1_v <- vector()
+part2_v <- vector()
+euclidean <- function(a, b) sqrt(sum((a - b)^2))
+
+for (i in 1:30)
+{
+  for (j in 1:30)
+  {
+    if (i == j)
+      next()
+    else
+    {
+      raw[i,j] = euclidean(long_cbf[id == i]$value, long_cbf[id == j]$value)
+      part1[i,j] = euclidean(long_cbf[id == i]$value, long_cbf[id == j]$`1D Fused Lasso`)
+      part2[i,j] = euclidean(long_cbf[id == i]$value, long_cbf[id == j]$`Regression Trees`)
+    }
+  }
+  raw_v[i] = cbf_train[which.min(raw[i,]),class]
+  part1_v[i] = cbf_train[which.min(part1[i,]),class]
+  part2_v[i] = cbf_train[which.min(part2[i,]),class]
+}
+
+class_table[,'raw'] <- raw_v
+class_table[,'1D Fused Lasso'] <- part1_v
+class_table[,'Regression Trees'] <- part2_v
+
+class_table
+```
+
+Now that we found out the class labels, let's see the Confusion Matrix of each and make comment about it.
+
+```{r confusion matrices, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+print("Confusion Matrix for Raw Data")
+table(class_table$`raw`, class_table$class)
+
+print("Confusion Matrix for 1D Fused Lasso ")
+table(class_table$`1D Fused Lasso`, class_table$class)
+
+print("Confusion Matrix for Regression Trees")
+table(class_table$`Regression Trees`, class_table$class)
+
+
+```
+
+From the confusion matrices, accuracy scores are calculated as 0.83, 0.9, 0.87 respectively. It seems that "1D Fused Lasso" approach performed better compared to others. Regression Trees comes next, which implies that it is important to use representations because both of representations seem to have better conclusions.
+
+## Conclusion
+
+In this homework two penalized versions of the linear regression approaches are examined. These 2 penalized versions of the linear regression approaches that "1D Fused Lasso" and "Regression Trees" are alternative ways to obtain adaptive piecewise constant approximation. After representing the data, the two approaches are compared to each other in terms of their mean squared error rates.
+
+As final, their ability of representation and classification performance are evaluated at the end. It was actually surprised me a little that Regression Trees were better in MSE but on the othen hand 1D Fused Lasso was better in 1-NN Classification.
+
+## References
+You can find the related R Markdown file and related R Codes [here.](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/homework2.Rmd)
+
+Relevant data can be found [here.](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/CBF_TRAIN.txt)
+
+[Stack Overflow](https://stackoverflow.com/questions/9390749/return-index-of-the-smallest-value-in-a-vector)
+
+[match()](https://stat.ethz.ch/R-manual/R-devel/library/base/html/match.html)
+
+[rattle package](https://www.rdocumentation.org/packages/rattle/versions/5.4.0/topics/fancyRpartPlot)
+
+[genlasso package](https://cran.r-project.org/web/packages/genlasso/vignettes/article.pdf)
+
+[euclidean](https://www.statology.org/euclidean-distance-in-r/)
