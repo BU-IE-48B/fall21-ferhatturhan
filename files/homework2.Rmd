@@ -2,7 +2,9 @@
 title: "Penalized Regression Approaches for Time Series Representation"
 author: "Ferhat Turhan"
 date: "11/21/2021"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 In this homework students are required to deal with penalized versions of the linear regression approaches. These approaches will be applied to a data set with 30 time series. The main goal is to represent the time series with alternative approaches and these 2 penalized versions of the linear regression approaches that "1D Fused Lasso" and "Regression Trees" are alternative ways to obtain adaptive piecewise constant approximation.
