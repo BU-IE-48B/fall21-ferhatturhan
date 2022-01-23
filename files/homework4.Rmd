@@ -1,0 +1,248 @@
+---
+title: "Homework 4"
+author: "Ferhat Turhan"
+date: "1/18/2022"
+output: html_document
+---
+
+<!-- Justify text -->
+<style>body {text-align: justify}</style>
+
+```{r Setup, include=FALSE}
+library(knitr)      # a general-purpose package for dynamic report generation in R
+library(ggplot2)    # to create elegant data visualisations using the grammar of graphics
+library(data.table) 
+library(forecast)   
+library(lubridate)
+library(rpart)
+library(rattle)
+
+opts_chunk$set(tidy.opts = list(width.cutoff = 60),
+               tidy = TRUE,
+               echo = FALSE,
+               warning = FALSE,
+               message = FALSE,
+               fig.width = 8,
+               fig.align ='center')
+```
+
+# Forecasting The Hourly Solar Power Production
+
+In this forecasting problem, the aim is to find a model providing hourly solar power prediction for the next day. This prediction is needed in the following setting. Suppose that you are at day d and the predictions are needed for the day d+1 and you know the production values until the end of d-1. The proposed model is using the regression tree-based approach.
+
+In the provided data there are 175 variables that can be used in the regression model. These variables are a collection of temperature, relative humidity, short version of downward shortwave radiation flux and cloud cover data. Instead of spending too much time to understand the background information about these variables a data-driven approach is used to understand its relation to production levels.
+
+Linear regression is used as the base learner for the tree-based regression approach. For the tree learning, the depth parameter is fixed to 4 and complexity parameter is fixed to 0 to save time.
+
+As the base model for prediction, a very basic model is used, as proposed in the definition of the task, which is using last available data (lag 48 production → two day’s ago).
+
+## Data Manipulation
+
+First of all some manipulations are needed. These are adding trend variable, week day and month information. Then data is ordered and split into two parts as train and test data.
+
+```{r Manipulation}
+
+data <- fread("~/Downloads/production_with_weather_data.csv")
+
+data[,datetime:=ymd(date)+dhours(hour)]
+data <- data[order(datetime)] #to be sure that the data is ordered
+
+data[,trend:=1:.N]
+data[,w_day:=as.character(wday(datetime,label=T))]
+data[,mon:=as.character(month(datetime,label=T))]
+data[, lag_1:= shift(production,1)] #for future purposes
+
+train_data <- copy(data[1:18984])
+test_data <- copy(data[18985:20280])
+```
+
+Now that necessary manipulations are made, it's time to move on building the prediction models.
+
+## Base Model
+
+After building up the prediction model for the hourly solar power, a base model will be needed for comparison reasons. Therefore a base model for predictions is built as proposed in the description of the task. In this base model, the most recent production values (day d-1) is used to predict the next day's (day d+1) production values. Head of the prediction values by using this model is as following:
+
+```{r base model}
+
+pred <- data.table()
+pred[,datetime:=test_data$datetime]
+pred[,actual:=test_data$production]
+
+pred[,base_model:= shift(actual,48)]
+pred[1:48, "base_model"] = tail(train_data[,production], 48)
+
+head(pred)
+```
+
+## Regression Tree Approach
+
+Here tree-based regression approach is used to predict hourly solar power production. The depth parameter is fixed to 4 and complexity parameter is fixed to 0 to save time. And as the base learner, linear regression is used.
+
+```{r base regression}
+
+lm_base <- lm(production~trend+w_day+mon+as.factor(hour),train_data)
+summary(lm_base)
+checkresiduals(lm_base)
+```
+
+By looking at the summary of the base model, it can be said that adjusted r-squared value seems to be fine. And from the residual analysis, this model doesn't hold the assumptions about residuals, which are having zero mean, not being auto correlated and the normality assumption. Thus, I will add a lag 1 variable in the beginning to get rid of this auto correlation even if it is going to be a slight change.
+
+```{r base regression with lag1}
+
+lm_base <- lm(production~trend+w_day+mon+as.factor(hour)+lag_1,train_data)
+summary(lm_base)
+checkresiduals(lm_base)
+```
+
+Now that I added lag variable, residual standard error and adjusted r-squared values are much better than before. Residuals seems to be in a better situation. Even though some assumptions still don't hold, it is a better base learner for the regression tree. Even though this model shows that day effect is not significant, I will keep it until processing the tree based approach. After all I will decide whether to keep it or not. Now let's move on building up regression trees.
+
+```{r first tree}
+
+temp <- copy(train_data)
+temp[,actual:=production]
+temp[,predicted:=predict(lm_base,temp)]
+temp[,residual:=actual-predicted]
+
+fit_res_tree <- rpart(residual~.-production-date-predicted-actual-trend-lag_1,temp,control=rpart.control(cp=0,maxdepth=4))
+fancyRpartPlot(fit_res_tree, main = "First Tree")
+```
+
+After the first regression tree, the proposed variables affecting residuals are processed to have a better regression model. Following is the updated regression model.
+
+```{r second model}
+
+temp[,v1:=as.numeric(DSWRF_surface_38.75_35.5<290)]
+temp[,v2:=as.numeric(DSWRF_surface_38_36<3)]
+temp[,v3:=as.numeric(hour>=6.5)]
+temp[,v4:=as.numeric(hour<14)]
+
+lm_base <-lm(production~trend+w_day+mon+as.factor(hour)+lag_1+v1:v2:v3:v4,temp)
+summary(lm_base)
+```
+
+After the first iteration, residual standard error decreased very slightly and adjusted r-squared is improved slightly. We should continue the next iterations.
+
+```{r second tree}
+
+temp[,predicted:=predict(lm_base,temp)]
+temp[,residual:=actual-predicted]
+
+fit_res_tree <- rpart(residual~.-production-date-predicted-actual-trend-lag_1-DSWRF_surface_38.75_35.5-DSWRF_surface_38_36-hour-v1-v2-v3-v4,temp,control=rpart.control(cp=0,maxdepth=4))
+fancyRpartPlot(fit_res_tree,main = "Second Tree")
+```
+
+After the second regression tree, the proposed variables affecting residuals are processed to have a better regression model. Following is the updated regression model.
+
+```{r third model}
+temp[,v5:=as.numeric(DSWRF_surface_39_35.75>=258)]
+temp[,v6:=as.numeric(DSWRF_surface_38_35.75>=703)]
+temp[,v7:=as.numeric(DSWRF_surface_38.5_35>=874)]
+temp[,v8:=as.numeric(TCDC_entire.atmosphere_39_35.25>=65)]
+
+lm_base <-lm(production~trend+w_day+mon+as.factor(hour)+lag_1+v1:v2:v3:v4+v5:v6:v7:v8,temp)
+summary(lm_base)
+```
+
+After the second iteration, residual standard error decreased very very little but adjusted r-squared didn't change. We should continue the third and the last iteration for the scope of this task.
+
+```{r third tree}
+
+temp[,predicted:=predict(lm_base,temp)]
+temp[,residual:=actual-predicted]
+
+fit_res_tree <- rpart(residual~.-production-date-predicted-actual-trend-lag_1-DSWRF_surface_38.75_35.5-DSWRF_surface_38_36-hour-v1-v2-v3-v4-DSWRF_surface_39_35.75-DSWRF_surface_38_35.75-DSWRF_surface_38.5_35-TCDC_entire.atmosphere_39_35.25-v5-v6-v7-v8,temp,control=rpart.control(cp=0,maxdepth=4))
+fancyRpartPlot(fit_res_tree,main = "Third Tree")
+```
+
+After the third regression tree, the proposed variables affecting residuals are processed to have a better regression model. Following is the updated regression model.
+
+```{r fourth model}
+
+temp[,v9:=as.numeric(DSWRF_surface_38.5_35.25>=290)]
+temp[,v10:=as.numeric(DSWRF_surface_38_35.5>=722)]
+temp[,v11:=as.numeric(RH_2.m.above.ground_38_36>=72)]
+temp[,v12:=as.numeric(RH_2.m.above.ground_38.25_35.5<48)]
+
+lm_base <-lm(production~trend+w_day+mon+as.factor(hour)+lag_1+v1:v2:v3:v4+v5:v6:v7:v8+v9:v10:v11:v12,temp)
+summary(lm_base)
+```
+
+For the scope of this task, three regression trees are enough. The final adjusted r-squared and residual standard errors better than the beginning base learner regression model. Since the trend and the day effect seem to be insignificant in this model, I will remove those and do the predictions using the last model.
+
+```{r removing day and trend}
+
+lm_base <-lm(production~mon+as.factor(hour)+lag_1+v1:v2:v3:v4+v5:v6:v7:v8+v9:v10:v11:v12,temp)
+summary(lm_base)
+checkresiduals(lm_base)
+```
+
+Residuals seems to be in better situation compared to beginning. Even though it is necessary to do a residual analysis, I will use the model as this way for this task.
+
+Now predictions will be made using this model. Since there are some empty cells in the data, some of the predictions cannot be made by using this regression model. To fill those empty prediction slots base model is used, which is basically taking the value of 48 hours before as the prediction. Below is the head of the vector of predictions.
+
+```{r predictions}
+
+test_data[,v1:=as.numeric(DSWRF_surface_38.75_35.5<290)]
+test_data[,v2:=as.numeric(DSWRF_surface_38_36<3)]
+test_data[,v3:=as.numeric(hour>=6.5)]
+test_data[,v4:=as.numeric(hour<14)]
+test_data[,v5:=as.numeric(DSWRF_surface_39_35.75>=258)]
+test_data[,v6:=as.numeric(DSWRF_surface_38_35.75>=703)]
+test_data[,v7:=as.numeric(DSWRF_surface_38.5_35>=874)]
+test_data[,v8:=as.numeric(TCDC_entire.atmosphere_39_35.25>=65)]
+test_data[,v9:=as.numeric(DSWRF_surface_38.5_35.25>=290)]
+test_data[,v10:=as.numeric(DSWRF_surface_38_35.5>=722)]
+test_data[,v11:=as.numeric(RH_2.m.above.ground_38_36>=72)]
+test_data[,v12:=as.numeric(RH_2.m.above.ground_38.25_35.5<48)]
+
+test_data[,predicted:=predict(lm_base,test_data)]
+pred[,tree_based_regression:=test_data$predicted]
+pred[tree_based_regression<0] <- 0 #production cannot be lower than 0
+
+indexes <- which(is.na(pred$tree_based_regression))
+for(i in 1:length(indexes))
+{
+   pred$tree_based_regression[indexes[i]] <- pred$actual[indexes[i]-48]
+}
+
+head(pred)
+```
+
+## Discusssion and Conclusion
+
+Now that the predictions are made, it's time to compare the results of both models: tree-based regression model and the base model. To compare both methods, WMAPE, weighted mean absolute error rates are used as proposed in the task definition. Details of this metric can be found [here](https://en.wikipedia.org/wiki/WMAPE).
+
+```{r}
+statistics <- function(actual, forecasted){
+  n=length(actual)
+  error = actual - forecasted
+  mean = mean(actual)
+  sd = sd(actual)
+  bias = sum(error) / sum(actual)
+  mad = sum(abs(error)) / n
+  wmape = mad / mean
+  l = data.frame(n, mean, sd, bias, mad, wmape)
+  colnames(l) <- c("N", "Mean", "Standard Deviation", "Bias", "MAD", "WMAPE")
+  return(l)
+}
+
+kable(statistics(pred$actual, pred$base_model),
+      caption = "Statistics for Base Model", align = 'c')
+
+kable(statistics(pred$actual, pred$tree_based_regression),
+      caption = "Statistics for Tree-Based Regression Model", align = 'c')
+```
+
+As the statistics show, **Tree-Based Regression Model** is a lot better than the base model. Even though there could have been some better arrangements such as deeper residual analysis and adding some other related variables, or approaching to the data daily instead of hourly, this model proves that regression-tree approach made predictions su much better than the base model in terms of weighted mean absolute percentage error and mean absolute deviation metrics. Yet, 18% is still quite high, therefore it can be examined more deeply to improve it to a better model.
+
+# References
+
+Relevant data can be found [here](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/production_with_weather_data.csv).
+
+You can find the related R Markdown file and related R Codes [here](https://bu-ie-48b.github.io/fall21-ferhatturhan/files/homework4.Rmd).
+
+
+
+
+
+
