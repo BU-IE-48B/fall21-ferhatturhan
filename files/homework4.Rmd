@@ -30,7 +30,7 @@ opts_chunk$set(tidy.opts = list(width.cutoff = 60),
 
 In this forecasting problem, the aim is to find a model providing hourly solar power prediction for the next day. This prediction is needed in the following setting. Suppose that you are at day d and the predictions are needed for the day d+1 and you know the production values until the end of d-1. The proposed model is using the regression tree-based approach.
 
-In the provided data there are 175 variables that can be used in the regression model. These variables are a collection of temperature, relative humidity, short version of downward shortwave radiation flux and cloud cover data. Instead of spending too much time to understand the background information about these variables a data-driven approach is used to understand its relation to production levels.
+In the provided data there are 175 variables that can be used in the regression model. These variables are a collection of temperature, relative humidity, downward shortwave radiation flux and cloud cover data. Instead of spending too much time to understand the background information about these variables a data-driven approach is used to understand its relation to production levels.
 
 Linear regression is used as the base learner for the tree-based regression approach. For the tree learning, the depth parameter is fixed to 4 and complexity parameter is fixed to 0 to save time.
 
@@ -42,7 +42,7 @@ First of all some manipulations are needed. These are adding trend variable, wee
 
 ```{r Manipulation}
 
-data <- fread("~/Downloads/production_with_weather_data.csv")
+data <- fread("~/Documents/GitHub/fall21-ferhatturhan/files/production_with_weather_data.csv")
 
 data[,datetime:=ymd(date)+dhours(hour)]
 data <- data[order(datetime)] #to be sure that the data is ordered
