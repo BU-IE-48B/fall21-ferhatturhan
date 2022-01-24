@@ -12,8 +12,16 @@
 
 [Here](files/homework2.pdf) you can find the description of the homework.
 
-## Homework 4 23.01.2021
+## Homework 4 (23.01.2021)
 
 [Here](files/homework4.html) you can find the fourth homework. In this forecasting problem, the aim is to find a model providing hourly solar power prediction for the next day. This prediction is needed in the following setting. Suppose that you are at day d and the predictions are needed for the day d+1 and you know the production values until the end of d-1. The proposed model is using the regression tree-based approach.
 
 [Here](files/IE48B_Fall21_Final.pdf) you can find the description of the homework.
+
+## Project (23.01.2021)
+
+[Here](files/project.html) you can find the project about the prediction of the imbalance information of Electricity Market in Turkey.
+
+[Here](files/IE48B_Fall21_Project.pdf) you can find the first description of the project.
+
+[Here](files/IE48B_Fall21_Project_Phase2.pdf) you can find the description of the second part of the project.
